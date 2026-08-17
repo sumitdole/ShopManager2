@@ -9,32 +9,37 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # --------------------------------------------------
-      # 1. Get project
-      # --------------------------------------------------
+
+      # ============================================================
+      # 1. CHECKOUT PROJECT
+      # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --------------------------------------------------
-      # 2. Python 3.14
-      # --------------------------------------------------
-      - name: Set up Python 3.14
+
+      # ============================================================
+      # 2. PYTHON 3.11
+      # IMPORTANT: DO NOT USE PYTHON 3.14
+      # ============================================================
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.11"
 
-      # --------------------------------------------------
-      # 3. Java 17
-      # --------------------------------------------------
+
+      # ============================================================
+      # 3. JAVA 17
+      # ============================================================
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
           java-version: "17"
 
-      # --------------------------------------------------
-      # 4. Linux dependencies
-      # --------------------------------------------------
+
+      # ============================================================
+      # 4. LINUX BUILD DEPENDENCIES
+      # ============================================================
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
@@ -53,87 +58,137 @@ jobs:
             zlib1g-dev \
             libncurses5-dev \
             libncursesw5-dev \
-            libltdl-dev
+            libltdl-dev \
+            gettext
 
-      # --------------------------------------------------
-      # 5. Install Buildozer + Python dependencies
-      # --------------------------------------------------
-      - name: Install Buildozer
+
+      # ============================================================
+      # 5. INSTALL PYTHON BUILD TOOLS
+      # ============================================================
+      - name: Install Buildozer and Cython
         run: |
+          python --version
+          python -m pip --version
+
           python -m pip install --upgrade pip
-          python -m pip install --upgrade setuptools
-          python -m pip install legacy-cgi
+          python -m pip install --upgrade setuptools wheel
+
+          # Compatible Cython for Kivy 2.2.1 / p4a
           python -m pip install "Cython==0.29.34"
-          python -m pip install git+https://github.com/kivy/buildozer.git
 
-      # --------------------------------------------------
-      # 6. Configure modern python-for-android
-      # --------------------------------------------------
-      - name: Configure Buildozer
-        shell: bash
+          # Buildozer
+          python -m pip install "buildozer==1.5.0"
+
+          # python-for-android
+          python -m pip install "python-for-android"
+
+
+      # ============================================================
+      # 6. CHECK IMPORTANT VERSIONS
+      # ============================================================
+      - name: Check build environment
         run: |
-          python - <<'PY'
-          from pathlib import Path
+          echo "======================================"
+          echo "PYTHON"
+          python --version
 
-          path = Path("buildozer.spec")
-          text = path.read_text()
+          echo "======================================"
+          echo "PIP"
+          python -m pip --version
 
-          settings = {
-              "p4a.branch": "develop",
-              "android.api": "36",
-              "android.ndk": "29",
-              "android.minapi": "24",
-              "android.archs": "arm64-v8a, armeabi-v7a",
-              "android.accept_sdk_license": "True",
-          }
+          echo "======================================"
+          echo "CYTHON"
+          cython --version || true
 
-          lines = text.splitlines()
-          found = set()
-          output = []
+          echo "======================================"
+          echo "BUILDOZER"
+          buildozer --version
 
-          for line in lines:
-              stripped = line.strip()
+          echo "======================================"
+          echo "JAVA"
+          java -version
 
-              replaced = False
-
-              for key, value in settings.items():
-                  if stripped.startswith(key + " =") or stripped.startswith("#" + key + " ="):
-                      output.append(f"{key} = {value}")
-                      found.add(key)
-                      replaced = True
-                      break
-
-              if not replaced:
-                  output.append(line)
-
-          for key, value in settings.items():
-              if key not in found:
-                  output.append(f"{key} = {value}")
-
-          path.write_text("\n".join(output) + "\n")
-          PY
-
-          echo "========== BUILDZOER CONFIG =========="
-          grep -E "p4a.branch|android.api|android.ndk|android.minapi|android.archs|android.accept_sdk_license" buildozer.spec || true
           echo "======================================"
 
-      # --------------------------------------------------
-      # 7. Prepare Android SDK / NDK / p4a
-      # --------------------------------------------------
-      - name: Prepare Android build environment
-        run: |
-          buildozer android p4a -- --help
 
-      # --------------------------------------------------
-      # 8. Build APK
-      # --------------------------------------------------
+      # ============================================================
+      # 7. SHOW PROJECT STRUCTURE
+      # ============================================================
+      - name: Check project structure
+        run: |
+          echo "========== PROJECT FILES =========="
+          find . -maxdepth 3 -type f | sort
+          echo "==================================="
+
+
+      # ============================================================
+      # 8. VERIFY BUILD CONFIG
+      # ============================================================
+      - name: Check buildozer.spec
+        run: |
+          echo "========== BUILDOZER SPEC =========="
+          cat buildozer.spec
+          echo "===================================="
+
+
+      # ============================================================
+      # 9. CLEAN OLD BUILDS
+      # ============================================================
+      - name: Clean Buildozer cache
+        run: |
+          rm -rf .buildozer
+          rm -rf bin
+
+          mkdir -p bin
+
+
+      # ============================================================
+      # 10. ACCEPT ANDROID LICENSES
+      # ============================================================
+      - name: Accept Android licenses
+        run: |
+          mkdir -p "$HOME/.buildozer"
+
+          yes | buildozer android debug 2>/dev/null || true
+
+          echo "Android environment initialization complete."
+
+
+      # ============================================================
+      # 11. BUILD DEBUG APK
+      # ============================================================
       - name: Build APK
+        timeout-minutes: 45
         run: |
-          buildozer -v android debug
+          yes | buildozer -v android debug
 
-      # --------------------------------------------------
-      # 9. Upload APK
-      # --------------------------------------------------
+
+      # ============================================================
+      # 12. SHOW GENERATED FILES
+      # ============================================================
+      - name: Find APK
+        run: |
+          echo "========== BUILD OUTPUT =========="
+
+          if ls bin/*.apk 1> /dev/null 2>&1; then
+              ls -lh bin/*.apk
+              echo ""
+              echo "APK BUILD SUCCESSFUL!"
+          else
+              echo ""
+              echo "NO APK FOUND"
+              echo ""
+              echo "Searching entire project..."
+              find . -type f \( -name "*.apk" -o -name "*.aab" \) -print
+              exit 1
+          fi
+
+          echo "=================================="
+
+
+      # ============================================================
+      # 13. UPLOAD APK TO GITHUB
+      # ============================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
