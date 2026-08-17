@@ -11,20 +11,20 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. CHECKOUT PROJECT
+      # 1. CHECKOUT
       # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
       # ============================================================
-      # 2. PYTHON 3.11
-      # IMPORTANT: DO NOT USE PYTHON 3.14
+      # 2. PYTHON 3.14
+      # Current python-for-android requires the modern Python stack
       # ============================================================
-      - name: Set up Python 3.11
+      - name: Set up Python 3.14
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
 
       # ============================================================
@@ -33,12 +33,12 @@ jobs:
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
+          distribution: temurin
           java-version: "17"
 
 
       # ============================================================
-      # 4. LINUX BUILD DEPENDENCIES
+      # 4. LINUX DEPENDENCIES
       # ============================================================
       - name: Install Linux dependencies
         run: |
@@ -63,78 +63,84 @@ jobs:
 
 
       # ============================================================
-      # 5. INSTALL PYTHON BUILD TOOLS
+      # 5. INSTALL BUILDOZER
       # ============================================================
-      - name: Install Buildozer and Cython
+      - name: Install Buildozer
         run: |
           python --version
-          python -m pip --version
 
           python -m pip install --upgrade pip
-          python -m pip install --upgrade setuptools wheel
 
-          # Compatible Cython for Kivy 2.2.1 / p4a
-          python -m pip install "Cython==0.29.34"
+          python -m pip install \
+            setuptools \
+            wheel \
+            build
 
-          # Buildozer
-          python -m pip install "buildozer==1.5.0"
-
-          # python-for-android
-          python -m pip install "python-for-android"
+          python -m pip install \
+            "buildozer==1.5.0"
 
 
       # ============================================================
-      # 6. CHECK IMPORTANT VERSIONS
+      # 6. INSTALL CURRENT PYTHON-FOR-ANDROID
       # ============================================================
-      - name: Check build environment
+      - name: Install python-for-android
         run: |
-          echo "======================================"
-          echo "PYTHON"
+          python -m pip install \
+            "python-for-android==2026.5.9"
+
+
+      # ============================================================
+      # 7. VERIFY TOOLS
+      # ============================================================
+      - name: Verify build environment
+        run: |
+          echo "================================"
+          echo "Python:"
           python --version
 
-          echo "======================================"
-          echo "PIP"
-          python -m pip --version
-
-          echo "======================================"
-          echo "CYTHON"
-          cython --version || true
-
-          echo "======================================"
-          echo "BUILDOZER"
+          echo "================================"
+          echo "Buildozer:"
           buildozer --version
 
-          echo "======================================"
-          echo "JAVA"
+          echo "================================"
+          echo "python-for-android:"
+          python -m pythonforandroid.toolchain --version || true
+
+          echo "================================"
+          echo "Java:"
           java -version
 
-          echo "======================================"
+          echo "================================"
 
 
       # ============================================================
-      # 7. SHOW PROJECT STRUCTURE
+      # 8. CHECK PROJECT
       # ============================================================
       - name: Check project structure
         run: |
-          echo "========== PROJECT FILES =========="
+          echo "========== PROJECT =========="
+
           find . -maxdepth 3 -type f | sort
-          echo "==================================="
+
+          echo "============================="
 
 
       # ============================================================
-      # 8. VERIFY BUILD CONFIG
+      # 9. VERIFY REQUIREMENTS
       # ============================================================
-      - name: Check buildozer.spec
+      - name: Verify Buildozer requirements
         run: |
-          echo "========== BUILDOZER SPEC =========="
-          cat buildozer.spec
-          echo "===================================="
+          echo "========== REQUIREMENTS =========="
+
+          grep -n "^requirements" buildozer.spec || true
+
+          echo "=================================="
 
 
       # ============================================================
-      # 9. CLEAN OLD BUILDS
+      # 10. CLEAN PREVIOUS BUILD
       # ============================================================
-      - name: Clean Buildozer cache
+      - name: Clean previous Buildozer build
         run: |
           rm -rf .buildozer
           rm -rf bin
@@ -143,51 +149,44 @@ jobs:
 
 
       # ============================================================
-      # 10. ACCEPT ANDROID LICENSES
+      # 11. BUILD APK
       # ============================================================
-      - name: Accept Android licenses
-        run: |
-          mkdir -p "$HOME/.buildozer"
-
-          yes | buildozer android debug 2>/dev/null || true
-
-          echo "Android environment initialization complete."
-
-
-      # ============================================================
-      # 11. BUILD DEBUG APK
-      # ============================================================
-      - name: Build APK
-        timeout-minutes: 45
+      - name: Build Android APK
+        timeout-minutes: 60
         run: |
           yes | buildozer -v android debug
 
 
       # ============================================================
-      # 12. SHOW GENERATED FILES
+      # 12. CHECK APK
       # ============================================================
-      - name: Find APK
+      - name: Check APK output
         run: |
-          echo "========== BUILD OUTPUT =========="
+          echo "========== APK OUTPUT =========="
+
+          find . -type f -name "*.apk" -print
 
           if ls bin/*.apk 1> /dev/null 2>&1; then
-              ls -lh bin/*.apk
-              echo ""
-              echo "APK BUILD SUCCESSFUL!"
+            echo ""
+            echo "================================"
+            echo "      APK BUILD SUCCESSFUL"
+            echo "================================"
+            ls -lh bin/*.apk
           else
-              echo ""
-              echo "NO APK FOUND"
-              echo ""
-              echo "Searching entire project..."
-              find . -type f \( -name "*.apk" -o -name "*.aab" \) -print
-              exit 1
-          fi
+            echo ""
+            echo "NO APK WAS CREATED"
+            echo ""
+            echo "Last build files:"
+            find .buildozer -type f \
+              \( -name "*.log" -o -name "*.apk" \) \
+              -print | tail -50
 
-          echo "=================================="
+            exit 1
+          fi
 
 
       # ============================================================
-      # 13. UPLOAD APK TO GITHUB
+      # 13. UPLOAD APK
       # ============================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
