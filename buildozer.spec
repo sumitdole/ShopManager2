@@ -12,7 +12,7 @@ version = 1.0
 # Pinned deliberately — kivymd 2.x uses a completely different widget API
 # (Material Design 3 rewrite) that this codebase is NOT written against.
 # Do not bump kivymd past the 1.1.x line without rewriting the UI code.
-requirements = python3,kivy==2.2.1,kivymd==1.1.1,plyer,pillow
+requirements = python3,kivy,kivymd==1.1.1,plyer,pillow
 
 orientation = portrait
 fullscreen = 0
